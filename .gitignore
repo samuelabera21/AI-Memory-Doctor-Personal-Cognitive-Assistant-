@@ -1,0 +1,26 @@
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Local env and secrets
+.env
+.env.*
+!.env.example
+
+# Databases and local runtime data
+*.db
+*.sqlite3
+
+# Logs and reports
+*.log
+backend/reports/
+backend/backend/reports/
+
+# IDE files
+.vscode/
+
+# Virtual environments
+.venv/
+venv/
