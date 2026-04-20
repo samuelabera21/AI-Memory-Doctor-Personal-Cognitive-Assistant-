@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-dotenv
+sqlalchemy
+sentence-transformers
+faiss-cpu
+bcrypt
+python-jose[cryptography]
+python-dateutil
+scikit-learn
+httpx
+google-generativeai
+psycopg2-binary
