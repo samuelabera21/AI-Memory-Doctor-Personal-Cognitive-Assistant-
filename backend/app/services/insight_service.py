@@ -25,11 +25,22 @@ def get_time_bucket(hour):
 def analyze_insights(memories):
     if not memories:
         return {
+            "status": "insufficient_data",
             "insight": "No data to analyze.",
             "most_common_type": None,
             "most_productive_time": None,
             "repeated_mistakes": [],
             "trend": "no_data",
+        }
+
+    if len(memories) < 3:
+        return {
+            "status": "insufficient_data",
+            "insight": "More memories are needed for reliable pattern insights. Add at least 3 memories across different times/days.",
+            "most_common_type": memories[0].type if memories else None,
+            "most_productive_time": None,
+            "repeated_mistakes": [],
+            "trend": "insufficient_data",
         }
 
     types = []
@@ -86,6 +97,7 @@ def analyze_insights(memories):
         narrative += f" Repeated mistake themes: {', '.join(repeated_mistakes)}."
 
     return {
+        "status": "ready",
         "insight": narrative,
         "most_common_type": most_common_type,
         "most_productive_time": best_time,
