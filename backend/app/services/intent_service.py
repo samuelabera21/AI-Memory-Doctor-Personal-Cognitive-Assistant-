@@ -1,7 +1,13 @@
 def detect_intent(text: str) -> str:
-    text = text.lower()
+    text = (text or "").strip().lower()
 
-    if any(word in text for word in ["summarize", "summary", "this week", "this month"]):
+    if not text:
+        return "unknown"
+
+    if any(word in text for word in [
+        "summarize", "summary", "summarization", "this week", "this month", "today summary",
+        "weekly review", "monthly review", "review my",
+    ]):
         return "summarize"
 
     if any(word in text for word in ["insight", "pattern", "most common", "productive", "repeat"]):
