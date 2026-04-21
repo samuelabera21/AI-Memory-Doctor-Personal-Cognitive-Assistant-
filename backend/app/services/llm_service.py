@@ -1,5 +1,8 @@
 from app.config import settings
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _gemini_generate(query: str, memory_rows: list[dict]) -> str | None:
@@ -18,7 +21,8 @@ def _gemini_generate(query: str, memory_rows: list[dict]) -> str | None:
         prompt = (
             "You are AI Memory Doctor. Answer only from retrieved memories. "
             "If not enough evidence, say you could not find it. "
-            "Keep answer concise and in English.\n\n"
+            "Keep answer concise, friendly, and in English. "
+            "Use user-centric wording like 'You did...' and prefer a clear timeline when relevant.\n\n"
             f"Query: {query}\n"
             f"Memories: {json.dumps(memory_rows, ensure_ascii=True)}"
         )
@@ -27,7 +31,8 @@ def _gemini_generate(query: str, memory_rows: list[dict]) -> str | None:
         text = getattr(response, "text", None)
         if text:
             return text.strip()
-    except Exception:
+    except Exception as exc:
+        logger.warning("Gemini generation failed: %s", exc)
         return None
     return None
 
