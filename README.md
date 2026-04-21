@@ -101,6 +101,8 @@ Generated files are saved under backend/reports as both JSON and CSV.
 
 Read detailed design and usage in docs/backend/features.
 
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8001
+
 - memory-input.md
 - memory-storage.md
 - retrieval-and-search.md
