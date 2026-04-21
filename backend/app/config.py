@@ -32,7 +32,7 @@ class Settings:
 	embedding_model_name: str = os.getenv("EMBEDDING_MODEL_NAME", "all-MiniLM-L6-v2")
 	llm_provider: str = os.getenv("LLM_PROVIDER", "gemini")
 	llm_api_key: str = os.getenv("LLM_API_KEY", "")
-	llm_model: str = os.getenv("LLM_MODEL", "gemini-1.5-flash")
+	llm_model: str = os.getenv("LLM_MODEL", "models/gemini-2.0-flash")
 
 
 def parse_csv_env(value: str) -> list[str]:
