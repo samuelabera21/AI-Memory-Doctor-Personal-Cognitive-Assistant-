@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.db.database import SessionLocal
 from app.models.memory_model import Memory
 from app.services.dependency import get_current_user
+from app.services.llm_service import generate_grounded_answer
 from app.services.summarization_service import summarize_memories, get_date_range
 
 router = APIRouter()
@@ -31,12 +32,29 @@ def summarize(data: SummaryInput, user=Depends(get_current_user)):
             Memory.date <= end
         ).all()
 
-        summary = summarize_memories(memories)
+        memory_rows = [
+            {
+                "date": m.date,
+                "time": m.time,
+                "type": m.type,
+                "content": m.content,
+                "duration": m.duration,
+                "tags": m.tags.split(",") if m.tags else [],
+                "version": m.version,
+            }
+            for m in memories
+        ]
+
+        ai_summary = generate_grounded_answer(query=data.query, memory_rows=memory_rows)
+        ai_used = bool(ai_summary)
+        summary = ai_summary if ai_used else summarize_memories(memories)
 
         return {
             "query": data.query,
             "summary": summary,
             "count": len(memories),
+            "ai_used": ai_used,
+            "provider": "gemini" if ai_used else "fallback",
             "period": {
                 "start_date": start,
                 "end_date": end,
