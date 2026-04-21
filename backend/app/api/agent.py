@@ -27,25 +27,30 @@ def agent_handler(data: UserInput, user=Depends(get_current_user)):
 
     intent = detect_intent(user_text)
 
+    def with_intent(payload):
+        if isinstance(payload, dict):
+            return {"intent": intent, **payload}
+        return {"intent": intent, "data": payload}
+
     if intent == "store":
-        return add_memory(MemoryInput(content=user_text), user=user)
+        return with_intent(add_memory(MemoryInput(content=user_text), user=user))
 
     if intent == "search":
-        return search_memory(SearchInput(query=user_text), user=user)
+        return with_intent(search_memory(SearchInput(query=user_text), user=user))
 
     if intent == "reminder":
-        return {"message": "Reminder feature coming soon"}
+        return with_intent({"message": "Reminder feature coming soon"})
 
     if intent == "summarize":
-        return summarize(SummaryInput(query=user_text), user=user)
+        return with_intent(summarize(SummaryInput(query=user_text), user=user))
 
     if intent == "insight":
-        return get_insights(user=user)
+        return with_intent(get_insights(user=user))
 
     if intent == "update":
-        return correction_update(CorrectionInput(text=user_text), user=user)
+        return with_intent(correction_update(CorrectionInput(text=user_text), user=user))
 
-    return {
+    return with_intent({
         "message": "I didn't understand",
         "hint": "Try storing a memory, asking a query, requesting summary, or sending a correction."
-    }
+    })
