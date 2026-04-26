@@ -9,8 +9,12 @@ from app.services.vector_store import search_user_vectors
 from app.services.answer_service import generate_answer
 from app.services.temporal_service import parse_query_time_filters, in_time_window
 from app.services.ranking_service import rank_memories
-from app.services.semantic_intent_service import detect_requested_types_semantic
-from app.services.conversation_service import update_context
+from app.services.semantic_intent_service import (
+    detect_requested_types_semantic,
+    get_semantic_type_scores,
+    is_confident_type_query,
+)
+from app.services.conversation_service import normalize_query_with_context, update_context
 
 from app.services.dependency import get_current_user
 
@@ -50,10 +54,19 @@ def _extract_requested_types(query: str) -> set[str]:
     return requested
 
 
-def _extract_requested_types_intelligent(query: str) -> set[str]:
+def _extract_requested_types_intelligent(query: str, semantic_scores: dict[str, float] | None = None) -> set[str]:
     semantic = detect_requested_types_semantic(query)
     keyword = _extract_requested_types(query)
-    return semantic.union(keyword)
+    merged = semantic.union(keyword)
+
+    if keyword:
+        return merged
+
+    semantic_scores = semantic_scores or {}
+    if is_confident_type_query(query=query, semantic_scores=semantic_scores):
+        return merged
+
+    return set()
 
 
 @router.post("/search-memory")
@@ -61,13 +74,16 @@ def search_memory(data: SearchInput, user=Depends(get_current_user)):
     db = SessionLocal()
 
     try:
-        time_filters = parse_query_time_filters(data.query)
-        query_vector = get_embedding(data.query)
+        effective_query = normalize_query_with_context(user_id=user.id, query=data.query)
+
+        time_filters = parse_query_time_filters(effective_query)
+        query_vector = get_embedding(effective_query)
         vector_results = search_user_vectors(query_vector=query_vector, user_id=user.id, k=20)
         semantic_scores = {row["memory_id"]: row["semantic_score"] for row in vector_results}
 
         memory_ids = [row["memory_id"] for row in vector_results]
-        requested_types = _extract_requested_types_intelligent(data.query)
+        semantic_type_scores = get_semantic_type_scores(effective_query)
+        requested_types = _extract_requested_types_intelligent(effective_query, semantic_scores=semantic_type_scores)
         has_structured_time = bool(time_filters.get("start_date") or time_filters.get("end_date") or time_filters.get("start_time"))
 
         if has_structured_time or requested_types:
@@ -101,17 +117,18 @@ def search_memory(data: SearchInput, user=Depends(get_current_user)):
                 continue
             filtered.append(m)
 
-        ranked = rank_memories(query=data.query, memories=filtered, semantic_scores=semantic_scores)
-        if "summarize" in data.query.lower() or "recent" in data.query.lower():
+        ranked = rank_memories(query=effective_query, memories=filtered, semantic_scores=semantic_scores)
+        if "summarize" in effective_query.lower() or "recent" in effective_query.lower():
             final_results = sorted(filtered, key=lambda m: (m.date, m.time), reverse=True)[:8]
         else:
             final_results = ranked[:8]
-        answer = generate_answer(data.query, final_results)
+        answer = generate_answer(effective_query, final_results)
 
-        update_context(data.query, final_results)
+        update_context(user_id=user.id, query=effective_query, memories=final_results)
 
         return {
             "query": data.query,
+            "effective_query": effective_query,
             "answer": answer,
             "results": [
                 {
