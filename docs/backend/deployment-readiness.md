@@ -2,6 +2,16 @@
 
 ## Current Status
 
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+Run backend
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+
+Then in a second terminal run frontend:
+
+cd ~/Desktop/AI/ai-memory-doctor/frontend
+npm run dev
+S
+
 This backend is suitable for deployment in a small-to-medium environment after environment variables are configured.
 
 For Render deployment, the backend is ready when the environment variables below are set in the Render dashboard.
