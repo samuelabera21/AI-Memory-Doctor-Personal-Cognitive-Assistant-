@@ -9,6 +9,7 @@ from app.services.vector_store import search_user_vectors
 from app.services.answer_service import generate_answer
 from app.services.temporal_service import parse_query_time_filters, in_time_window
 from app.services.ranking_service import rank_memories
+from app.services.semantic_intent_service import detect_requested_types_semantic
 from app.services.conversation_service import update_context
 
 from app.services.dependency import get_current_user
@@ -49,6 +50,12 @@ def _extract_requested_types(query: str) -> set[str]:
     return requested
 
 
+def _extract_requested_types_intelligent(query: str) -> set[str]:
+    semantic = detect_requested_types_semantic(query)
+    keyword = _extract_requested_types(query)
+    return semantic.union(keyword)
+
+
 @router.post("/search-memory")
 def search_memory(data: SearchInput, user=Depends(get_current_user)):
     db = SessionLocal()
@@ -60,7 +67,7 @@ def search_memory(data: SearchInput, user=Depends(get_current_user)):
         semantic_scores = {row["memory_id"]: row["semantic_score"] for row in vector_results}
 
         memory_ids = [row["memory_id"] for row in vector_results]
-        requested_types = _extract_requested_types(data.query)
+        requested_types = _extract_requested_types_intelligent(data.query)
         has_structured_time = bool(time_filters.get("start_date") or time_filters.get("end_date") or time_filters.get("start_time"))
 
         if has_structured_time or requested_types:
