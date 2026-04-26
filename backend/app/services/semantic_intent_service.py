@@ -88,3 +88,34 @@ def detect_requested_types_semantic(query: str, threshold: float = 0.36) -> set[
         selected.add("goal")
 
     return selected
+
+
+def get_semantic_type_scores(query: str) -> dict[str, float]:
+    q = (query or "").strip()
+    if not q:
+        return {}
+
+    query_vector = get_embedding(q)
+    vectors = _prototype_vectors()
+    scores: dict[str, float] = {}
+
+    for memory_type, prototype_list in vectors.items():
+        best = max(_cosine_similarity(query_vector, prototype) for prototype in prototype_list)
+        scores[memory_type] = best
+
+    return scores
+
+
+def is_confident_type_query(query: str, semantic_scores: dict[str, float], min_confidence: float = 0.52) -> bool:
+    q = (query or "").lower()
+    # Explicit type-focused query should always allow type filtering.
+    explicit_signals = [
+        "activity", "activities", "decision", "decisions", "goal", "goals",
+        "habit", "habits", "mistake", "mistakes", "event", "events", "idea", "ideas",
+        "what type", "what category",
+    ]
+    if any(signal in q for signal in explicit_signals):
+        return True
+
+    # For implicit phrasing, require high semantic confidence to avoid noisy over-filtering.
+    return (max(semantic_scores.values()) if semantic_scores else 0.0) >= min_confidence
