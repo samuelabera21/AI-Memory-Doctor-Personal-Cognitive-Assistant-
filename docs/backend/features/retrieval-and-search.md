@@ -7,12 +7,17 @@ Answer memory questions with hybrid retrieval.
 - POST /search-memory
 
 ## Hybrid Retrieval Steps
-1. Embed query.
-2. Retrieve semantic candidates from FAISS.
-3. Pull candidate records from SQL by memory_id and user_id.
-4. Apply temporal filters (date/time windows).
-5. Rank by semantic score, lexical overlap, and recency.
-6. Generate grounded response.
+1. Normalize query with user conversation context for follow-up questions.
+2. Embed effective query.
+3. Retrieve semantic candidates from FAISS.
+4. Pull candidate records from SQL by memory_id and user_id.
+5. Apply temporal filters (date/time windows).
+6. Rank by semantic score, lexical overlap, and recency.
+7. Generate grounded response.
+
+## Context Continuity
+- Follow-up prompts like "what about last week?" can be enriched using the same user's recent topic/type context.
+- Context is isolated per user in memory and applied only for follow-up-style queries.
 
 ## Ranking
 - semantic_weight = 0.60
