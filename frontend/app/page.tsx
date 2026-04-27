@@ -16,6 +16,8 @@ type MemoryRow = {
   duration?: string | null;
   tags?: string[];
   version?: number;
+  importance_score?: number;
+  importance_reasons?: string[];
 };
 
 type MemoryHistoryRow = {
@@ -42,6 +44,19 @@ type SearchResponse = {
     start_time?: string | null;
     end_time?: string | null;
   };
+  context_meta?: {
+    query_context_applied?: boolean;
+    temporal_context_applied?: boolean;
+    gate?: {
+      applied?: boolean;
+      reason?: string;
+      confidence?: number;
+      is_followup?: boolean;
+      is_fresh?: boolean;
+      ttl_seconds?: number;
+      min_confidence?: number;
+    };
+  };
 };
 
 type SummaryResponse = {
@@ -61,12 +76,18 @@ type InsightResponse = {
   most_productive_time: string | null;
   repeated_mistakes: string[];
   trend: string;
+  priority_count?: number;
+  priority_ratio?: number;
+  priority_focus?: string | null;
+  priority_highlights?: string[];
 };
 
 type EvalMetrics = {
   classification_accuracy: number;
   retrieval_accuracy: number;
   response_correctness: number;
+  context_followup_accuracy?: number;
+  context_application_rate?: number;
   sample_count: number;
   notes?: string[];
   passed_cases?: number;
@@ -78,6 +99,55 @@ type ExportReportResponse = {
   metrics: EvalMetrics;
   json_report: string;
   csv_report: string;
+};
+
+type ContextScenarioResponse = {
+  message: string;
+  scenario: {
+    seed_count: number;
+    first_query: string;
+    followup_query: string;
+    first_result_count: number;
+    followup_result_count: number;
+    context_meta?: {
+      query_context_applied?: boolean;
+      temporal_context_applied?: boolean;
+      gate?: {
+        applied?: boolean;
+        reason?: string;
+        confidence?: number;
+      };
+    };
+  };
+  scores: {
+    context_followup_correctness: number;
+    context_application_rate: number;
+  };
+  metric_sample: {
+    retrieval_precision: number;
+    response_correctness: number;
+    context_followup_correctness: number;
+    context_application_rate: number;
+  };
+};
+
+type ContextScenarioHistoryItem = {
+  run_id: string;
+  generated_at_utc?: string;
+  user_id?: number;
+  context_followup_correctness: number;
+  context_application_rate?: number;
+  gate_reason?: string;
+  gate_confidence?: number;
+  query_context_applied?: boolean;
+  temporal_context_applied?: boolean;
+};
+
+type ContextScenarioHistoryResponse = {
+  items: ContextScenarioHistoryItem[];
+  count: number;
+  limit: number;
+  avg_context_followup_correctness?: number;
 };
 
 type HealthPayload = {
@@ -231,6 +301,8 @@ export default function Home() {
   const [metricsData, setMetricsData] = useState<EvalMetrics | null>(null);
   const [reportName, setReportName] = useState("thesis_eval_ui");
   const [exportData, setExportData] = useState<ExportReportResponse | null>(null);
+  const [contextScenarioData, setContextScenarioData] = useState<ContextScenarioResponse | null>(null);
+  const [contextScenarioHistory, setContextScenarioHistory] = useState<ContextScenarioHistoryResponse | null>(null);
 
   const [rootData, setRootData] = useState<HealthPayload | null>(null);
   const [liveData, setLiveData] = useState<HealthPayload | null>(null);
@@ -639,8 +711,8 @@ export default function Home() {
         token,
         body: {
           samples: [
-            { retrieval_precision: 0.8, response_correctness: 0.9 },
-            { retrieval_precision: 0.7, response_correctness: 0.8 },
+            { retrieval_precision: 0.8, response_correctness: 0.9, context_followup_correctness: 1.0, context_application_rate: 1.0 },
+            { retrieval_precision: 0.7, response_correctness: 0.8, context_followup_correctness: 0.5, context_application_rate: 0.5 },
           ],
         },
         onUnauthorized,
@@ -661,6 +733,35 @@ export default function Home() {
       });
       setExportData(response);
       setGlobalSuccess("Evaluation report exported.");
+    });
+  };
+
+  const runContextScenario = async () => {
+    await withGuard(async () => {
+      if (!token) throw new Error("Please login first.");
+      const response = await apiRequest<ContextScenarioResponse>("/evaluation/run-context-scenario", {
+        method: "POST",
+        token,
+        onUnauthorized,
+      });
+      setContextScenarioData(response);
+      const history = await apiRequest<ContextScenarioHistoryResponse>("/evaluation/context-scenario-history?limit=8", {
+        token,
+        onUnauthorized,
+      });
+      setContextScenarioHistory(history);
+      setGlobalSuccess("Context scenario completed.");
+    });
+  };
+
+  const loadContextScenarioHistory = async () => {
+    await withGuard(async () => {
+      if (!token) throw new Error("Please login first.");
+      const history = await apiRequest<ContextScenarioHistoryResponse>("/evaluation/context-scenario-history?limit=8", {
+        token,
+        onUnauthorized,
+      });
+      setContextScenarioHistory(history);
     });
   };
 
@@ -703,6 +804,7 @@ export default function Home() {
 
   const showComposer = activeView === "home" || activeView === "search";
   const selectedMemory = selectedMemoryId ? memories.find((memory) => memory.id === selectedMemoryId) ?? null : null;
+  const showContextDiagnostics = process.env.NODE_ENV !== "production";
 
   if (!authHydrated) {
     return (
@@ -942,7 +1044,33 @@ export default function Home() {
                       </div>
                     )}
                     <p className={styles.smallLabel}>Results: {searchData.results.length}</p>
+                    <ul className={styles.memoryList}>
+                      {searchData.results.slice(0, 5).map((row) => (
+                        <li key={row.id}>
+                          <strong>{row.date}</strong> {row.time} | {row.type} | {row.content}
+                          <div className={styles.filterChips}>
+                            <span className={styles.chip}>importance: {(row.importance_score ?? 0).toFixed(2)}</span>
+                            {row.importance_reasons?.slice(0, 3).map((reason) => (
+                              <span key={reason} className={styles.chip}>{reason}</span>
+                            ))}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
+
+                  {showContextDiagnostics && searchData.context_meta && (
+                    <div className={styles.debugPanel}>
+                      <p className={styles.debugTitle}>Dev diagnostics: context engine</p>
+                      <div className={styles.filterChips}>
+                        <span className={styles.chip}>query_context_applied: {String(Boolean(searchData.context_meta.query_context_applied))}</span>
+                        <span className={styles.chip}>temporal_context_applied: {String(Boolean(searchData.context_meta.temporal_context_applied))}</span>
+                        <span className={styles.chip}>gate.reason: {searchData.context_meta.gate?.reason ?? "n/a"}</span>
+                        <span className={styles.chip}>gate.confidence: {searchData.context_meta.gate?.confidence?.toFixed(3) ?? "0.000"}</span>
+                        <span className={styles.chip}>gate.applied: {String(Boolean(searchData.context_meta.gate?.applied))}</span>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </article>
@@ -1093,6 +1221,12 @@ export default function Home() {
                             <p className={styles.smallLabel}>
                               {memory.type} | {memory.date} {memory.time} | version {memory.version ?? 1}
                             </p>
+                            <div className={styles.filterChips}>
+                              <span className={styles.chip}>importance: {(memory.importance_score ?? 0).toFixed(2)}</span>
+                              {memory.importance_reasons?.slice(0, 3).map((reason) => (
+                                <span key={`${memory.id}-${reason}`} className={styles.chip}>{reason}</span>
+                              ))}
+                            </div>
                             <div className={styles.inlineButtons}>
                               <button
                                 className={styles.secondaryBtn}
@@ -1364,6 +1498,22 @@ export default function Home() {
                     <p className={styles.smallLabel}>Repeated mistakes</p>
                     <p>{insightData.repeated_mistakes.join(", ") || "None"}</p>
                   </div>
+                  <div className={styles.statCard}>
+                    <p className={styles.smallLabel}>Priority memories</p>
+                    <p>{insightData.priority_count ?? 0}</p>
+                    <p className={styles.smallLabel}>
+                      {typeof insightData.priority_ratio === "number"
+                        ? `${Math.round(insightData.priority_ratio * 100)}% of log`
+                        : "No ratio yet"}
+                    </p>
+                  </div>
+                  <div className={styles.statCard}>
+                    <p className={styles.smallLabel}>Priority focus</p>
+                    <p>{insightData.priority_focus ?? "-"}</p>
+                    <p className={styles.smallLabel}>
+                      {insightData.priority_highlights?.slice(0, 2).join(" | ") || "No priority highlights"}
+                    </p>
+                  </div>
                   <div className={`${styles.statCard} ${styles.statWide}`}>
                     <p className={styles.smallLabel}>Narrative</p>
                     <p>{insightData.insight}</p>
@@ -1408,6 +1558,12 @@ export default function Home() {
                 <button className={styles.secondaryBtn} type="button" onClick={() => void postSampleMetrics()} disabled={loading}>
                   Post sample metrics
                 </button>
+                <button className={styles.secondaryBtn} type="button" onClick={() => void runContextScenario()} disabled={loading}>
+                  Run context scenario
+                </button>
+                <button className={styles.secondaryBtn} type="button" onClick={() => void loadContextScenarioHistory()} disabled={loading}>
+                  Load context trend
+                </button>
               </div>
 
               <div className={styles.inlineForm}>
@@ -1440,6 +1596,20 @@ export default function Home() {
                     <p className={styles.smallLabel}>Sample count</p>
                     <p className={styles.metricValue}>{metricsData.sample_count}</p>
                   </div>
+
+                  {typeof metricsData.context_followup_accuracy === "number" && (
+                    <div className={styles.statCard}>
+                      <p className={styles.smallLabel}>Context follow-up accuracy</p>
+                      <p className={styles.metricValue}>{asPercent(metricsData.context_followup_accuracy)}</p>
+                    </div>
+                  )}
+
+                  {typeof metricsData.context_application_rate === "number" && (
+                    <div className={styles.statCard}>
+                      <p className={styles.smallLabel}>Context application rate</p>
+                      <p className={styles.metricValue}>{asPercent(metricsData.context_application_rate)}</p>
+                    </div>
+                  )}
 
                   {(typeof metricsData.passed_cases === "number" || typeof metricsData.total_cases === "number") && (
                     <div className={`${styles.statCard} ${styles.statWide}`}>
@@ -1480,7 +1650,8 @@ export default function Home() {
                   <p className={styles.smallLabel}>
                     Export snapshot: {asPercent(exportData.metrics.classification_accuracy)} classification,
                     {" "}{asPercent(exportData.metrics.retrieval_accuracy)} retrieval,
-                    {" "}{asPercent(exportData.metrics.response_correctness)} correctness.
+                    {" "}{asPercent(exportData.metrics.response_correctness)} correctness,
+                    {" "}{asPercent(exportData.metrics.context_application_rate ?? 0)} context-use.
                   </p>
                   {typeof exportData.metrics.passed_cases === "number" && typeof exportData.metrics.total_cases === "number" && (
                     <p className={styles.smallLabel}>
@@ -1492,6 +1663,63 @@ export default function Home() {
                 <div className={styles.resultBox}>
                   <p>No export run yet.</p>
                   <p className={styles.smallLabel}>Run Export JSON + CSV to generate report files.</p>
+                </div>
+              )}
+
+              {contextScenarioData ? (
+                <div className={styles.resultBox}>
+                  <p><strong>{contextScenarioData.message}</strong></p>
+                  <p className={styles.smallLabel}>Seeded memories (temporary): {contextScenarioData.scenario.seed_count}</p>
+                  <p className={styles.smallLabel}>First query: {contextScenarioData.scenario.first_query}</p>
+                  <p className={styles.smallLabel}>Follow-up query: {contextScenarioData.scenario.followup_query}</p>
+                  <div className={styles.filterChips}>
+                    <span className={styles.chip}>first_results: {contextScenarioData.scenario.first_result_count}</span>
+                    <span className={styles.chip}>followup_results: {contextScenarioData.scenario.followup_result_count}</span>
+                    <span className={styles.chip}>gate.reason: {contextScenarioData.scenario.context_meta?.gate?.reason ?? "n/a"}</span>
+                    <span className={styles.chip}>gate.confidence: {contextScenarioData.scenario.context_meta?.gate?.confidence?.toFixed(3) ?? "0.000"}</span>
+                  </div>
+                  <p className={styles.smallLabel}>
+                    Scenario scores: follow-up correctness {asPercent(contextScenarioData.scores.context_followup_correctness)},
+                    {" "}context application {asPercent(contextScenarioData.scores.context_application_rate)}.
+                  </p>
+                </div>
+              ) : (
+                <div className={styles.resultBox}>
+                  <p>No context scenario run yet.</p>
+                  <p className={styles.smallLabel}>Use Run context scenario to execute a real multi-turn test flow.</p>
+                </div>
+              )}
+
+              {contextScenarioHistory ? (
+                <div className={styles.resultBox}>
+                  <p><strong>Context scenario trend</strong></p>
+                  <div className={styles.filterChips}>
+                    <span className={styles.chip}>runs: {contextScenarioHistory.count}</span>
+                    <span className={styles.chip}>avg follow-up correctness: {asPercent(contextScenarioHistory.avg_context_followup_correctness ?? 0)}</span>
+                  </div>
+
+                  {contextScenarioHistory.items.length > 0 ? (
+                    <ul className={styles.historyList}>
+                      {contextScenarioHistory.items.slice().reverse().map((item) => (
+                        <li key={item.run_id}>
+                          <p>
+                            <strong>{item.run_id}</strong> | {item.generated_at_utc ? new Date(item.generated_at_utc).toLocaleString() : "n/a"}
+                          </p>
+                          <p className={styles.smallLabel}>
+                            follow-up: {asPercent(item.context_followup_correctness)} | app-rate: {asPercent(item.context_application_rate ?? 0)} |
+                            reason: {item.gate_reason ?? "n/a"} | confidence: {(item.gate_confidence ?? 0).toFixed(3)}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className={styles.smallLabel}>No history items yet.</p>
+                  )}
+                </div>
+              ) : (
+                <div className={styles.resultBox}>
+                  <p>No context trend loaded yet.</p>
+                  <p className={styles.smallLabel}>Use Load context trend to see longitudinal behavior quality.</p>
                 </div>
               )}
             </article>
