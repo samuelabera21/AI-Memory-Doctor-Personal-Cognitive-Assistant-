@@ -286,6 +286,22 @@
   color: var(--muted);
 }
 
+.debugPanel {
+  border: 1px dashed #b7c0cf;
+  background: #f8fbff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  display: grid;
+  gap: 8px;
+}
+
+.debugTitle {
+  font-size: 12px;
+  color: #2f4a73;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
 .formGrid {
   display: grid;
   gap: 10px;
