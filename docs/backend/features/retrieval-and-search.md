@@ -18,11 +18,25 @@ Answer memory questions with hybrid retrieval.
 ## Context Continuity
 - Follow-up prompts like "what about last week?" can be enriched using the same user's recent topic/type context.
 - Context is isolated per user in memory and applied only for follow-up-style queries.
+- Context is applied only when confidence is above a minimum threshold to prevent weak/noisy carry-over.
+- Context expires after a short TTL window to avoid stale context contaminating later unrelated queries.
+
+## Observability
+- Search response includes context metadata under context_meta:
+	- query_context_applied
+	- temporal_context_applied
+	- gate.reason
+	- gate.confidence
+
+## Lifecycle Safety
+- Stale context entries are automatically pruned after TTL expiry.
+- Context store enforces a maximum user cap and evicts oldest entries first.
 
 ## Ranking
 - semantic_weight = 0.60
 - overlap_weight = 0.20
 - recency_weight = 0.20
+- importance_weight boosts high-value memories like goals, decisions, mistakes, and urgent items.
 
 ## Files
 - backend/app/api/search.py
