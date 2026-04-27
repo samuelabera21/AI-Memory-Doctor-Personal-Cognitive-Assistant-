@@ -2,7 +2,12 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from app.services.dependency import get_current_user
-from app.services.evaluation_service import compute_system_metrics, run_endpoint_test_report
+from app.services.evaluation_service import (
+    compute_system_metrics,
+    get_context_scenario_history,
+    run_context_followup_scenario,
+    run_endpoint_test_report,
+)
 
 router = APIRouter(prefix="/evaluation", tags=["evaluation"])
 
@@ -10,6 +15,8 @@ router = APIRouter(prefix="/evaluation", tags=["evaluation"])
 class EvaluationSample(BaseModel):
     retrieval_precision: float
     response_correctness: float
+    context_followup_correctness: float = 0.0
+    context_application_rate: float = 0.0
 
 
 class EvaluationInput(BaseModel):
@@ -47,3 +54,14 @@ def export_report(payload: ReportExportInput, user=Depends(get_current_user)):
         cases=case_payload,
         report_name=payload.report_name,
     )
+
+
+@router.post("/run-context-scenario")
+def run_context_scenario(user=Depends(get_current_user)):
+    return run_context_followup_scenario(user=user)
+
+
+@router.get("/context-scenario-history")
+def context_scenario_history(limit: int = 20, user=Depends(get_current_user)):
+    _ = user
+    return get_context_scenario_history(limit=limit)
