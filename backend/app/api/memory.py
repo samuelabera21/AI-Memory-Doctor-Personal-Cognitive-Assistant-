@@ -6,6 +6,7 @@ from app.models.memory_model import Memory
 
 from app.services.nlp_service import structure_memory_text
 from app.services.embedding_service import get_embedding
+from app.services.importance_service import compute_importance_score, explain_importance
 from app.services.vector_store import upsert_memory_vector
 from app.services.dependency import get_current_user
 
@@ -53,6 +54,8 @@ def add_memory(memory: MemoryInput, user=Depends(get_current_user)):
         vector = get_embedding(content)
         upsert_memory_vector(
             memory_id=db_memory.id,
+                "importance_score": compute_importance_score(m),
+                "importance_reasons": explain_importance(m),
             user_id=user.id,
             vector=vector,
             text=db_memory.content,
