@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 from app.db.database import SessionLocal
 from app.models.memory_model import Memory
+from app.services.importance_service import compute_importance_score, explain_importance
 from app.services.dependency import get_current_user
 from app.services.llm_service import generate_grounded_answer
 from app.services.summarization_service import summarize_memories, get_date_range
@@ -41,6 +42,8 @@ def summarize(data: SummaryInput, user=Depends(get_current_user)):
                 "duration": m.duration,
                 "tags": m.tags.split(",") if m.tags else [],
                 "version": m.version,
+                "importance_score": compute_importance_score(m),
+                "importance_reasons": explain_importance(m),
             }
             for m in memories
         ]
