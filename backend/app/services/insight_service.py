@@ -2,6 +2,18 @@ from collections import Counter
 import re
 from datetime import datetime
 
+from app.services.importance_service import compute_importance_score
+
+
+IMPORTANT_THRESHOLD = 0.7
+
+
+def _shorten(text: str, limit: int = 72) -> str:
+    cleaned = (text or "").strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 1].rstrip() + "…"
+
 
 def extract_hour(time_str):
     try:
@@ -31,6 +43,10 @@ def analyze_insights(memories):
             "most_productive_time": None,
             "repeated_mistakes": [],
             "trend": "no_data",
+            "priority_count": 0,
+            "priority_ratio": 0.0,
+            "priority_focus": None,
+            "priority_highlights": [],
         }
 
     if len(memories) < 3:
@@ -41,6 +57,10 @@ def analyze_insights(memories):
             "most_productive_time": None,
             "repeated_mistakes": [],
             "trend": "insufficient_data",
+            "priority_count": 0,
+            "priority_ratio": 0.0,
+            "priority_focus": None,
+            "priority_highlights": [],
         }
 
     types = []
@@ -48,10 +68,19 @@ def analyze_insights(memories):
     durations = {}
     mistake_keywords = Counter()
     by_date = Counter()
+    priority_counter = Counter()
+    priority_highlights = []
+    priority_count = 0
 
     for m in memories:
         types.append(m.type)
         by_date[m.date] += 1
+
+        importance = compute_importance_score(m)
+        if importance >= IMPORTANT_THRESHOLD:
+            priority_count += 1
+            priority_counter[(m.type or "unknown").lower()] += 1
+            priority_highlights.append(_shorten(m.content))
 
         hour = extract_hour(m.time)
         bucket = get_time_bucket(hour)
@@ -87,12 +116,22 @@ def analyze_insights(memories):
             trend = "decreasing"
 
     repeated_mistakes = [w for w, _ in mistake_keywords.most_common(3)]
+    priority_ratio = round(priority_count / len(memories), 4)
+    priority_focus = priority_counter.most_common(1)[0][0] if priority_counter else None
+    priority_highlights = [item for item in priority_highlights[:3] if item]
 
     narrative = (
         f"Your most frequent memory type is '{most_common_type}'. "
         f"You are most active during the {best_time}. "
         f"You spend the most time on '{max_type}'."
     )
+    if priority_count:
+        narrative += (
+            f" High-priority memories make up {round(priority_ratio * 100)}% of your log"
+            f" and are concentrated in '{priority_focus}'."
+        )
+        if priority_highlights:
+            narrative += f" Key priority examples: {', '.join(priority_highlights)}."
     if repeated_mistakes:
         narrative += f" Repeated mistake themes: {', '.join(repeated_mistakes)}."
 
@@ -103,4 +142,8 @@ def analyze_insights(memories):
         "most_productive_time": best_time,
         "repeated_mistakes": repeated_mistakes,
         "trend": trend,
+        "priority_count": priority_count,
+        "priority_ratio": priority_ratio,
+        "priority_focus": priority_focus,
+        "priority_highlights": priority_highlights,
     }
