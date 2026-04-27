@@ -7,6 +7,7 @@ from app.models.memory_model import Memory
 from app.services.embedding_service import get_embedding
 from app.services.vector_store import search_user_vectors
 from app.services.answer_service import generate_answer
+from app.services.importance_service import compute_importance_score, explain_importance
 from app.services.temporal_service import parse_query_time_filters, in_time_window
 from app.services.ranking_service import rank_memories
 from app.services.semantic_intent_service import (
@@ -14,7 +15,12 @@ from app.services.semantic_intent_service import (
     get_semantic_type_scores,
     is_confident_type_query,
 )
-from app.services.conversation_service import normalize_query_with_context, update_context
+from app.services.conversation_service import (
+    get_context_observability,
+    merge_time_filters_with_context,
+    normalize_query_with_context,
+    update_context,
+)
 
 from app.services.dependency import get_current_user
 
@@ -74,9 +80,16 @@ def search_memory(data: SearchInput, user=Depends(get_current_user)):
     db = SessionLocal()
 
     try:
+        context_gate = get_context_observability(user_id=user.id, query=data.query)
         effective_query = normalize_query_with_context(user_id=user.id, query=data.query)
+        query_context_applied = effective_query != data.query
 
-        time_filters = parse_query_time_filters(effective_query)
+        raw_time_filters = parse_query_time_filters(effective_query)
+        time_filters = merge_time_filters_with_context(user_id=user.id, query=effective_query, time_filters=raw_time_filters)
+        temporal_context_applied = (
+            (raw_time_filters.get("start_date") is None and time_filters.get("start_date") is not None)
+            or (raw_time_filters.get("end_date") is None and time_filters.get("end_date") is not None)
+        )
         query_vector = get_embedding(effective_query)
         vector_results = search_user_vectors(query_vector=query_vector, user_id=user.id, k=20)
         semantic_scores = {row["memory_id"]: row["semantic_score"] for row in vector_results}
@@ -124,7 +137,7 @@ def search_memory(data: SearchInput, user=Depends(get_current_user)):
             final_results = ranked[:8]
         answer = generate_answer(effective_query, final_results)
 
-        update_context(user_id=user.id, query=effective_query, memories=final_results)
+        update_context(user_id=user.id, query=effective_query, memories=final_results, time_filters=time_filters)
 
         return {
             "query": data.query,
@@ -139,10 +152,17 @@ def search_memory(data: SearchInput, user=Depends(get_current_user)):
                     "time": m.time,
                     "duration": m.duration,
                     "semantic_score": semantic_scores.get(m.id, 0.0),
+                    "importance_score": compute_importance_score(m),
+                    "importance_reasons": explain_importance(m),
                 }
                 for m in final_results
             ],
             "time_filters": time_filters,
+            "context_meta": {
+                "query_context_applied": query_context_applied,
+                "temporal_context_applied": temporal_context_applied,
+                "gate": context_gate,
+            },
         }
 
     finally:
